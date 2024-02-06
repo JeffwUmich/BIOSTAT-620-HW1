@@ -1,0 +1,227 @@
+---
+title: "HW1"
+author: "Jeffrey Waters"
+date: "2024-02-01"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(readxl)
+library(patchwork)
+library(psych)
+library(circular)
+```
+
+
+### Import Data
+```{r}
+data <- read_excel("ScreenTime_SPH.xlsx")
+
+```
+
+### Problem 1d
+```{r}
+
+# Create 2 new variables: daily_proportion_of_social_screen_time and daily_duration_per_use
+data$daily_proportion_of_social_screen_time <- data$Social.ST.min / data$Total.ST.min
+data$daily_duration_per_use <- data$Total.ST.min / data$Pickups
+
+```
+
+
+### Problem 1a
+```{r fig.width = 8, fig.heigh = 2}
+
+# Function to generate time series plots
+gen_time_series <- function(data_ori, y, ylabel, title){
+  
+  plot <- ggplot(data, aes_string(x="Date", y=y)) +
+    geom_line() + 
+    labs(title=title, x="Date", y=ylabel) + 
+    scale_x_datetime(date_breaks = "1 day", date_labels = "%a-%m/%d") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size=6),
+      plot.title=element_text(size=10, hjust=0.5),
+      axis.title.x=element_text(size=9),
+      axis.title.y=element_text(size=6),
+      #axis.text.y=element_text(size=15),
+      )
+}
+
+p1 <- gen_time_series(data=data, y="Total.ST.min", ylabel="Total Screen \nTime(mins)", title="Total Screen Time")
+p2 <- gen_time_series(data=data, y="Social.ST.min", ylabel="Social Screen \nTime(mins)", title="Social Screen Time")
+p3 <- gen_time_series(data=data, y="Pickups", ylabel="Pickups", title="Pickups")
+p4 <- gen_time_series(data=data, y="daily_proportion_of_social_screen_time", ylabel="Daily Proportion of \nSocial Screen Time", title="Daily Proportion of \nSocial Screen Time")
+p5 <- gen_time_series(data=data, y="daily_duration_per_use", ylabel="Daily Duration per Use", title="Daily Duration per Use")
+
+(p1 | p2) / (p3 | p4) / (p5)
+```
+
+### Make a pairwise scatterplot
+```{r fig.width = 10, fig.heigh = 10}
+
+plot_data <- data %>% select(Total.ST.min, Social.ST.min, Pickups, daily_proportion_of_social_screen_time, daily_duration_per_use)
+pairs.panels(plot_data, ellipses = FALSE, stars=TRUE, lm=FALSE, smooth=FALSE, method="pearson")
+
+```
+
+### Problem 2c Occupation time curve for each of the 5 time series
+```{r fig.width = 15, fig.height = 4}
+# Main function for generating occ. curve.
+gen_occ_curve <- function(data){
+  
+  smoothing <- 10
+  
+  # Apply a function to each column that returns a certain number of increments, defined by smoothing, as the c values
+  # The c values span from the min to the max.
+  data_seq <- data %>% apply(2, FUN = function(x) {seq(from=min(x), to=max(x), length.out=smoothing)}) %>% as.data.frame()
+  
+  # create extra dataframe for writing to
+  data_seq_percent <- data_seq
+  
+  for (name in colnames(data_seq)){
+    
+  # For each variable extract the data column and dat_seq column(contains the c values)
+    data_col <- data %>% select(name)
+    data_seq_col <- data_seq %>% select(name)
+    
+  # Apply the function on each row of the seq column that returns the sum of values >= c in data and divides by the total number of data points
+    data_seq_percent[, name] <- apply(data_seq_col, MARGIN=1, FUN= function(c) {sum(data_col >= c) / nrow(data_col)})
+  }
+  
+  # Rename the column names for seq and percent for plotting purposes when we combine them later.
+  colnames(data_seq) <- paste0(colnames(data_seq), "_Value")
+  colnames(data_seq_percent) <- paste0(colnames(data_seq_percent), "_Percent")
+
+  # Return dataframe containing the percents and the dataframe containing the c values.
+  return(list(data_seq_percent, data_seq))
+}
+
+# Get Occupation curve plotting values
+data_percent_thresh <- gen_occ_curve(plot_data)
+
+# Function for plotting the Occupation curve
+gen_occ_curve_plot <- function(values, percent, title){
+  plot_df <- data.frame(x=values, y=percent)
+  
+  plot <- ggplot(plot_df, aes(x=x, y=y)) + 
+    geom_line() + 
+    labs(title=title, x="Vector Magnitude c", y="P(X >= c)") + 
+    theme(plot.title=element_text(size=15, hjust=0.5))
+  
+  return(plot)
+}
+
+                                # Percent values are 2 for first index    # C values are 1 for first index
+p1 <- gen_occ_curve_plot(data_percent_thresh[[2]][[1]], data_percent_thresh[[1]][[1]], colnames(plot_data)[1])
+p2 <- gen_occ_curve_plot(data_percent_thresh[[2]][[2]], data_percent_thresh[[1]][[2]], colnames(plot_data)[2])
+p3 <- gen_occ_curve_plot(data_percent_thresh[[2]][[3]], data_percent_thresh[[1]][[3]], colnames(plot_data)[3])
+p4 <- gen_occ_curve_plot(data_percent_thresh[[2]][[4]], data_percent_thresh[[1]][[4]], "daily proportion of \nsocial screen time")
+p5 <- gen_occ_curve_plot(data_percent_thresh[[2]][[5]], data_percent_thresh[[1]][[5]], colnames(plot_data)[5])
+
+(p1 | p2 | p3 | p4 | p5)
+#draw_occupation_time_curve <- function(data)
+```
+### Problem 2d
+
+```{r fig.width = 6, fig.height = 4}
+
+# Extract data for autocorrelation
+acf_df <- data %>%  select(Total.ST.min, Social.ST.min, Pickups, 
+               daily_proportion_of_social_screen_time, daily_duration_per_use)
+
+# Generate plots
+for (v in colnames(acf_df)){
+  acp = acf(acf_df %>% select(v), main = v)
+}
+```
+
+
+### Problemn 3a
+```{r}
+# Function to convert time into angle
+convert_time_to_angle <- function(data){
+  
+  # Extract hour component and minutes component from posix column 
+  hours <- as.numeric(format(data$Pickup.1st, "%H"))
+  minutes <- as.numeric(format(data$Pickup.1st, "%M"))
+  
+  # combine them to time in minutes(time starts from 0 corresponding to 12:00 AM)
+  time_in_minutes <- hours * 60 + minutes
+                        # time / total time in minutes on 24 hour clock
+                        # Multiplied by degrees in circle to get degree placement(clockwise) on clock
+  data$time_in_angle <- (time_in_minutes / (24 * 60)) * 360
+  
+  return(data)
+}
+
+data_1st_Pickup <- data %>% select(Pickup.1st)
+data_1st_Pickup <- convert_time_to_angle(data_1st_Pickup)
+
+```
+
+
+### Problem 3b
+```{r}
+data_1st_Pickup$circular_time <- circular(data_1st_Pickup$time_in_angle, units="degrees", template="clock24")
+
+# Plot Circular Scatterplot
+plot(data_1st_Pickup$circular_time, 
+     main="First Pickup Times\n on 24-hour Clock")
+
+```
+### Problem 3c
+```{r}
+# Plot Circular Histogram
+plot(data_1st_Pickup$circular_time, 
+     main="Histogram of First \nPickup Times on 24-hour Clock",
+     bins=48,                       # bins of every 30 mins starting at 12:00AM
+     stack=TRUE
+     )
+
+```
+### Problem 4b
+```{r}
+model <- glm(Pickups ~ offset(log(Total.ST.min / 60)), family = poisson, data=data)
+
+exp(coef(model)[1])
+```
+
+### Problem 4c
+```{r}
+data$isWeekday <- ifelse(weekdays(data$Date) %in% c("Saturday", "Sunday"), 0, 1)
+data$afterHoliday <- ifelse(data$Date >= as.POSIXct("2024-01-10", tz="UTC"), 1, 0)
+
+model <- glm(Pickups ~ offset(log(Total.ST.min / 60)) + isWeekday + afterHoliday, family = poisson, data=data)
+
+summary(model)
+```
+### Problem 4c estimate values for lambda for each scenario:
+```{r}
+coefficients <- exp(coef(model))
+# Weekend and before holiday
+print(coefficients["(Intercept)"])
+# Weekday and before holiday
+print(coefficients["(Intercept)"] + coefficients["isWeekday"])
+# Weekend and after holiday
+print(coefficients["(Intercept)"] + coefficients["afterHoliday"])
+# Weekday and after holiday
+print(coefficients["(Intercept)"] + coefficients["isWeekday"] + coefficients["afterHoliday"])
+```
+
+### Problem 5a
+```{r}
+mle.vonmises(data_1st_Pickup$circular_time)
+```
+### Problem 5b
+```{r}
+#8:30AM in hours converted to degrees on a 24h clock
+timepoint <- 8.5 / 24 * 360
+timepoint <- circular(timepoint, units="degrees", template="clock24")
+# mu value generated from mle.vonmises, converted into circular.
+mu <- circular(126.4, units="degrees", template="clock24")
+
+(1 - pvonmises(timepoint, mu=mu, kappa=6.635))
+```
